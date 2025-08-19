@@ -17,6 +17,10 @@
 #include "shortfin/local/systems/amdgpu.h"
 #endif
 
+#ifdef SHORTFIN_HAVE_CUDA
+#include "shortfin/local/systems/cuda.h"
+#endif
+
 namespace shortfin::local {
 
 SystemPtr System::Create(iree_allocator_t host_allocator,
@@ -55,6 +59,15 @@ std::unique_ptr<SystemBuilder> SystemBuilder::ForSystem(
           +[](iree_allocator_t host_allocator,
               ConfigOptions options) -> std::unique_ptr<SystemBuilder> {
             return std::make_unique<systems::AMDGPUSystemBuilder>(
+                host_allocator, std::move(options));
+          }),
+#endif
+#ifdef SHORTFIN_HAVE_CUDA
+      std::make_pair(
+          "cuda",
+          +[](iree_allocator_t host_allocator,
+              ConfigOptions options) -> std::unique_ptr<SystemBuilder> {
+            return std::make_unique<systems::CUDASystemBuilder>(
                 host_allocator, std::move(options));
           }),
 #endif

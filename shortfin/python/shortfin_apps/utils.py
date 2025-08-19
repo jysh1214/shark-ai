@@ -22,7 +22,7 @@ def get_system_args(parser):
         "--device",
         type=str,
         required=True,
-        choices=["local-task", "hip", "amdgpu"],
+        choices=["local-task", "hip", "amdgpu", "cuda"],
         help="Device to serve on; e.g. local-task, hip. Same options as `iree-run-module --device` ",
     )
     parser.add_argument(
@@ -92,6 +92,17 @@ class SystemManager:
                 sb.visible_devices = sb.available_devices
                 sb.visible_devices = get_selected_devices(sb, device_ids)
             self.ls = sb.create_system()
+        elif any(x in device for x in ["cuda"]):
+            sb = sf.SystemBuilder(
+                system_type="cuda",
+                cuda_async_allocations=async_allocs,
+            )
+            if device_ids:
+                sb.visible_devices = sb.available_devices
+                sb.visible_devices = get_selected_devices(sb, device_ids)
+            self.ls = sb.create_system()
+        else:
+            raise ValueError(f"Unsupported device type: {device}. Supported types are: local-task, cpu, hip, amdgpu, cuda")
 
         self.logger.info(f"Created local system with {self.ls.device_names} devices")
         # TODO: Come up with an easier bootstrap thing than manually

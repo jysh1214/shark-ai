@@ -23,11 +23,26 @@
 #if defined(SHORTFIN_HAVE_AMDGPU)
 #include "shortfin/local/systems/amdgpu.h"
 #endif  // SHORTFIN_HAVE_AMDGPU
+#if defined(SHORTFIN_HAVE_CUDA)
+#include "shortfin/local/systems/cuda.h"
+#endif  // SHORTFIN_HAVE_CUDA
 #include "shortfin/local/systems/host.h"
 #include "shortfin/support/globals.h"
 #include "shortfin/support/logging.h"
 
 namespace shortfin::python {
+
+// Forward declarations
+void BindLocal(py::module_ &m);
+void BindHostSystem(py::module_ &global_m);
+#if defined(SHORTFIN_HAVE_AMDGPU)
+void BindAMDGPUSystem(py::module_ &global_m);
+#endif  // SHORTFIN_HAVE_AMDGPU
+#if defined(SHORTFIN_HAVE_CUDA)
+void BindCUDASystem(py::module_ &global_m);
+#endif  // SHORTFIN_HAVE_CUDA
+void BindArray(py::module_ &m);
+void BindLLM(py::module_ &m);
 
 namespace {
 
@@ -548,6 +563,9 @@ NB_MODULE(lib, m) {
 #if defined(SHORTFIN_HAVE_AMDGPU)
   BindAMDGPUSystem(local_m);
 #endif  // SHORTFIN_HAVE_AMDGPU
+#if defined(SHORTFIN_HAVE_CUDA)
+  BindCUDASystem(local_m);
+#endif  // SHORTFIN_HAVE_CUDA
 
   auto array_m = m.def_submodule("array");
   BindArray(array_m);
@@ -1546,6 +1564,84 @@ void BindAMDGPUSystem(py::module_ &global_m) {
   py::class_<local::systems::AMDGPUDevice, local::Device>(m, "AMDGPUDevice");
 }
 #endif  // SHORTFIN_HAVE_AMDGPU
+
+#if defined(SHORTFIN_HAVE_CUDA)
+void BindCUDASystem(py::module_ &global_m) {
+  auto m = global_m.def_submodule("cuda", "CUDA system config");
+  py::class_<local::systems::CUDASystemBuilder,
+             local::systems::HostCPUSystemBuilder>(m, "SystemBuilder")
+      .def("__init__", [](py::args, py::kwargs) {})
+      .def_static(
+          "__new__",
+          [](py::handle cls, std::optional<std::string> env_prefix,
+             bool validate_undef, py::kwargs kwargs) {
+            auto options =
+                CreateConfigOptions(env_prefix, kwargs, validate_undef);
+            return std::make_unique<local::systems::CUDASystemBuilder>(
+                iree_allocator_system(), std::move(options));
+          },
+          py::arg("cls") = py::none(), py::kw_only(),
+          py::arg("env_prefix").none() = "SHORTFIN_",
+          py::arg("validate_undef") = true, py::arg("kwargs"))
+      .def_prop_rw(
+          "cuda_allocator_specs",
+          [](local::systems::CUDASystemBuilder &self) {
+            return self.cuda_allocator_specs();
+          },
+          [](local::systems::CUDASystemBuilder &self,
+             std::vector<std::string> specs) {
+            self.cuda_allocator_specs() = std::move(specs);
+          })
+      .def_prop_ro("available_devices",
+                   [](local::systems::CUDASystemBuilder &self) {
+                     return self.GetAvailableDeviceIds();
+                   })
+      .def_prop_rw(
+          "async_allocations",
+          [](local::systems::CUDASystemBuilder &self) {
+            return self.async_allocations();
+          },
+          [](local::systems::CUDASystemBuilder &self, bool value) {
+            self.async_allocations() = value;
+          })
+      .def_prop_rw(
+          "cpu_devices_enabled",
+          [](local::systems::CUDASystemBuilder &self) -> bool {
+            return self.cpu_devices_enabled();
+          },
+          [](local::systems::CUDASystemBuilder &self, bool en) {
+            self.cpu_devices_enabled() = en;
+          })
+      .def_prop_rw(
+          "tracing_level",
+          [](local::systems::CUDASystemBuilder &self) -> int32_t {
+            return self.tracing_level();
+          },
+          [](local::systems::CUDASystemBuilder &self, int32_t level) {
+            self.tracing_level() = level;
+          })
+      .def_prop_rw(
+          "logical_devices_per_physical_device",
+          [](local::systems::CUDASystemBuilder &self) -> size_t {
+            return self.logical_devices_per_physical_device();
+          },
+          [](local::systems::CUDASystemBuilder &self, size_t value) {
+            self.logical_devices_per_physical_device() = value;
+          })
+      .def_prop_rw(
+          "visible_devices",
+          [](local::systems::CUDASystemBuilder &self)
+              -> std::optional<std::vector<std::string>> {
+            return self.visible_devices();
+          },
+          [](local::systems::CUDASystemBuilder &self,
+             std::optional<std::vector<std::string>> vs) {
+            self.visible_devices() = std::move(vs);
+          });
+
+  py::class_<local::systems::CUDADevice, local::Device>(m, "CUDADevice");
+}
+#endif  // SHORTFIN_HAVE_CUDA
 
 void BindLLM(py::module_ &m) {
   // Bind LogitsNormalization enum

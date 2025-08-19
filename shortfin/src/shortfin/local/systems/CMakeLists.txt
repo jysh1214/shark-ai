@@ -51,6 +51,26 @@ if(SHORTFIN_SYSTEMS_AMDGPU)
   target_compile_definitions(shortfin_public_defs INTERFACE SHORTFIN_HAVE_AMDGPU)
 endif()
 
+if(SHORTFIN_SYSTEMS_CUDA)
+  shortfin_cc_component(
+    NAME
+      shortfin_systems_cuda
+    HDRS
+      cuda.h
+    SRCS
+      cuda.cc
+    DEFINES
+      SHORTFIN_HAVE_CUDA
+    COMPONENTS
+      shortfin_local
+      shortfin_support
+    DEPS
+      iree_hal_drivers_cuda_cuda
+  )
+  list(APPEND _SYSTEM_COMPONENTS shortfin_systems_cuda)
+  target_compile_definitions(shortfin_public_defs INTERFACE SHORTFIN_HAVE_CUDA)
+endif()
+
 shortfin_cc_component(
   NAME
     shortfin_systems_factory

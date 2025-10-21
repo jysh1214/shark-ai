@@ -100,7 +100,7 @@ class PagedLlmModelV1(BaseCausalLMModel):
                 theta("output_norm"), epsilon=self.hp.attention_layer_norm_rms_epsilon
             ),
         )
-        self.add_module("output_lm_head", LinearLayer(theta("output")))
+        self.add_module("output_lm_head", LinearLayer(theta("output"), use_fp8_matmul=config.use_fp8_matmul))
         self.attn_blocks = nn.ModuleList(
             [
                 AttentionFFNBlock(
@@ -283,6 +283,7 @@ class AttentionFFNBlock(ThetaLayer):
                 attn_temperature_tuning=config.hp.attn_temperature_tuning,
                 floor_scale=config.hp.floor_scale,
                 attention_scale=config.hp.attention_scale,
+                use_fp8_matmul=config.use_fp8_matmul,
             ),
         )
 
@@ -361,6 +362,7 @@ class AttentionFFNBlock(ThetaLayer):
                 FFN(
                     theta=theta,
                     fake_quant=fake_quant,
+                    use_fp8_matmul=config.use_fp8_matmul,
                 ),
             )
 

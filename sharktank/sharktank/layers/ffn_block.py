@@ -27,10 +27,13 @@ class FFN(ThetaLayer):
         is_gated: bool = True,
         activation_fn: Callable[[torch.Tensor], torch.Tensor] = F.silu,
         fake_quant: bool = False,
+        use_fp8_matmul: bool = False,
     ):
         """
         add_residual:
             At the end of the block add to the input.
+        use_fp8_matmul:
+            If True, use FP8 E4M3FN for matrix multiplications.
         """
         super().__init__(theta)
 
@@ -39,12 +42,12 @@ class FFN(ThetaLayer):
 
         if self.is_gated:
             self.add_module(
-                "ffn_gate", LinearLayer(theta("ffn_gate"), fake_quant=fake_quant)
+                "ffn_gate", LinearLayer(theta("ffn_gate"), fake_quant=fake_quant, use_fp8_matmul=use_fp8_matmul)
             )
 
-        self.add_module("ffn_up", LinearLayer(theta("ffn_up"), fake_quant=fake_quant))
+        self.add_module("ffn_up", LinearLayer(theta("ffn_up"), fake_quant=fake_quant, use_fp8_matmul=use_fp8_matmul))
         self.add_module(
-            "ffn_down", LinearLayer(theta("ffn_down"), fake_quant=fake_quant)
+            "ffn_down", LinearLayer(theta("ffn_down"), fake_quant=fake_quant, use_fp8_matmul=use_fp8_matmul)
         )
 
     def forward(

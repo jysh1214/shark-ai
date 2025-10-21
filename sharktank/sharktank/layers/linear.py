@@ -29,6 +29,9 @@ class LinearLayer(ThetaLayer):
 
     fake quant only exists in order to allow for q_input to act as qdq.
     when fake quant is false, q_input will quantize normally.
+
+    FP8 E4M3FN computation:
+    When use_fp8_matmul=True, performs FP8 matrix multiplication.
     ```
     """
 
@@ -39,12 +42,14 @@ class LinearLayer(ThetaLayer):
         weight_name: str = "weight",
         bias_name: str = "bias",
         fake_quant: bool = False,
+        use_fp8_matmul: bool = False,
     ):
         super().__init__(theta)
         self._simulate_native_quant = True
         self.weight = self.theta_tensor(weight_name)
         self.bias = None
         self.fake_quant = fake_quant
+        self.use_fp8_matmul = use_fp8_matmul
         if bias_name in self.theta.keys:
             self.bias = self.theta_tensor(bias_name)
 
@@ -74,7 +79,15 @@ class LinearLayer(ThetaLayer):
         elif qdq_input is not None:
             x = ops.quantize(x, qdq_input).unpack().dequant()
 
-        y = ops.linear(x, weight, bias)
+        if self.use_fp8_matmul:
+            x_fp8 = ops.to(x, dtype=torch.float8_e4m3fn)
+            weight_fp8 = ops.to(weight, dtype=torch.float8_e4m3fn)
+            y = ops.matmul(x_fp8, weight_fp8, transpose_rhs=True)
+            y = ops.to(y, dtype=x.dtype if not isinstance(x, torch.Tensor) else x.dtype)
+            if bias is not None:
+                y = y + bias
+        else:
+            y = ops.linear(x, weight, bias)
 
         if isinstance(y, QuantizedTensor):
             y = y.unpack().dequant()

@@ -430,6 +430,9 @@ class LlamaModelConfig:
     # The default data type to use for model parameters and computations.
     dtype: Optional[torch.dtype] = None
 
+    # If True, use FP8 E4M3FN for matrix multiplications (requires hardware support).
+    use_fp8_matmul: bool = False
+
     def __post_init__(self):
         if self.moe_layers is None:
             if self.hp.interleave_moe_layer_step is None:

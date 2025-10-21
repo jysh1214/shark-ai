@@ -229,6 +229,7 @@ def main():
         activation_dtype=args.activation_dtype,
         attention_dtype=args.attention_dtype,
         kv_cache_dtype=args.kv_cache_dtype,
+        use_fp8_matmul=args.use_fp8_matmul,
     )
 
     llama_config.fake_quant = args.fake_quant

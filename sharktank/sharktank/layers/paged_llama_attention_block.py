@@ -46,6 +46,7 @@ class PagedLlamaAttentionBlock(ThetaLayer):
         use_qk_norm: bool = False,
         attn_temperature_tuning: bool = False,
         floor_scale: Optional[float] = None,
+        use_fp8_matmul: bool = False,
     ):
         super().__init__(theta)
         self.paged_attention = cache
@@ -75,13 +76,13 @@ class PagedLlamaAttentionBlock(ThetaLayer):
         self.v_quantizer = None
         if self.attn_type == "gqa":
             self.add_module(
-                "attn_q", LinearLayer(theta("attn_q"), fake_quant=self.fake_quant)
+                "attn_q", LinearLayer(theta("attn_q"), fake_quant=self.fake_quant, use_fp8_matmul=use_fp8_matmul)
             )
             self.add_module(
-                "attn_k", LinearLayer(theta("attn_k"), fake_quant=self.fake_quant)
+                "attn_k", LinearLayer(theta("attn_k"), fake_quant=self.fake_quant, use_fp8_matmul=use_fp8_matmul)
             )
             self.add_module(
-                "attn_v", LinearLayer(theta("attn_v"), fake_quant=self.fake_quant)
+                "attn_v", LinearLayer(theta("attn_v"), fake_quant=self.fake_quant, use_fp8_matmul=use_fp8_matmul)
             )
             self.k_quantizer = self.attn_k.q_output
             self.v_quantizer = self.attn_v.q_output
@@ -105,7 +106,7 @@ class PagedLlamaAttentionBlock(ThetaLayer):
             "attn_norm", RMSNormLayer(theta("attn_norm"), epsilon=rms_epsilon)
         )
         self.add_module(
-            "attn_output", LinearLayer(theta("attn_output"), fake_quant=self.fake_quant)
+            "attn_output", LinearLayer(theta("attn_output"), fake_quant=self.fake_quant, use_fp8_matmul=use_fp8_matmul)
         )
         if "kv_cache" in theta.keys:
             self.cache_quantizer: Optional[QuantizerTensor] = theta.optional_tensor(

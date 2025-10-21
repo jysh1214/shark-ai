@@ -186,6 +186,12 @@ def add_model_options(parser: argparse.ArgumentParser):
         type=int,
         default=None,
     )
+    parser.add_argument(
+        "--use-fp8-matmul",
+        help="Use FP8 E4M3FN for matrix multiplications (requires hardware support)",
+        action="store_true",
+        default=False,
+    )
 
 
 def add_model_input_options(parser: argparse.ArgumentParser):

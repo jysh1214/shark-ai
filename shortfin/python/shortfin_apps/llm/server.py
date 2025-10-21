@@ -119,6 +119,24 @@ def add_service_args(parser: argparse.ArgumentParser):
         default=False,
         help="Use native implementations for token selection.",
     )
+    parser.add_argument(
+        "--qemu_executable",
+        type=Path,
+        default=None,
+        help="Path to QEMU user-mode executable (e.g., qemu-riscv64) for cross-architecture VMFB execution",
+    )
+    parser.add_argument(
+        "--qemu_args",
+        type=Path,
+        default=None,
+        help="Path to a text file containing QEMU arguments (one per line, # for comments)",
+    )
+    parser.add_argument(
+        "--iree_run_module_path",
+        type=Path,
+        default=None,
+        help="Path to cross-compiled iree-run-module binary (required when using --qemu_executable)",
+    )
 
 
 def parse_args(argv):

@@ -6,7 +6,8 @@
 
 import logging
 import shortfin as sf
-
+from pathlib import Path
+from typing import Optional
 
 from .batcher import PrefillBatcherProcess, DecodeBatcherProcess
 from .config_struct import ModelParams, ServerParams
@@ -18,6 +19,7 @@ from .kvcache.page_pool import PagePoolConfig, PagePool
 from .manager import LlmSystemManager
 from .service_debug_dumper import SERVICE_DEBUG_DUMPER
 from .tokenizer import Tokenizer
+from .qemu_executor import QemuVmfbExecutor, QemuProgramFunction
 
 from ...utils import GenerateService
 from .request_queue_manager import RequestQueueManager
@@ -42,6 +44,7 @@ class LlmGenerateService(GenerateService):
         model_params: ModelParams,
         server_params: ServerParams,
         program_isolation: str = "per_call",
+        qemu_executor: Optional[QemuVmfbExecutor] = None,
     ):
         super().__init__(sysman)
         self.name = name
@@ -49,6 +52,7 @@ class LlmGenerateService(GenerateService):
 
         self.model_params = model_params
         self.server_params = server_params
+        self.qemu_executor = qemu_executor
 
         self.set_isolation(program_isolation)
         self._initialize_worker_and_fiber()
@@ -101,10 +105,17 @@ class LlmGenerateService(GenerateService):
             )
 
     def start(self):
-        component_modules = self.initialize_program_modules("main")
-        self.inference_program = self.create_program(
-            modules=component_modules, devices=self.sysman.ls.devices
-        )
+        # Only load the program modules if not using QEMU executor
+        # QEMU executor runs VMFB externally via subprocess
+        if self.qemu_executor is None:
+            component_modules = self.initialize_program_modules("main")
+            self.inference_program = self.create_program(
+                modules=component_modules, devices=self.sysman.ls.devices
+            )
+        else:
+            logger.info("Using QEMU executor for VMFB execution - skipping in-process program loading")
+            self.inference_program = None
+
         self.initialize_function_references()
 
         self.prefill_batcher = PrefillBatcherProcess(
@@ -134,16 +145,33 @@ class LlmGenerateService(GenerateService):
 
     def initialize_function_references(self):
         self.prefill_functions = {}
-        for bs in self.model_params.prefill_batch_sizes:
-            self.prefill_functions[bs] = self.inference_program[
-                f"{self.model_params.module_name}.prefill_bs{bs}"
-            ]
-        # Resolve decode entrypoints.
         self.decode_functions = {}
-        for bs in self.model_params.decode_batch_sizes:
-            self.decode_functions[bs] = self.inference_program[
-                f"{self.model_params.module_name}.decode_bs{bs}"
-            ]
+
+        if self.qemu_executor is not None:
+            # Use QEMU executor wrapped functions
+            for bs in self.model_params.prefill_batch_sizes:
+                function_name = f"prefill_bs{bs}"
+                self.prefill_functions[bs] = QemuProgramFunction(
+                    self.qemu_executor, function_name
+                )
+                logger.info(f"Registered QEMU function: {function_name}")
+
+            for bs in self.model_params.decode_batch_sizes:
+                function_name = f"decode_bs{bs}"
+                self.decode_functions[bs] = QemuProgramFunction(
+                    self.qemu_executor, function_name
+                )
+                logger.info(f"Registered QEMU function: {function_name}")
+        else:
+            # Use normal in-process functions
+            for bs in self.model_params.prefill_batch_sizes:
+                self.prefill_functions[bs] = self.inference_program[
+                    f"{self.model_params.module_name}.prefill_bs{bs}"
+                ]
+            for bs in self.model_params.decode_batch_sizes:
+                self.decode_functions[bs] = self.inference_program[
+                    f"{self.model_params.module_name}.decode_bs{bs}"
+                ]
 
     def __repr__(self):
         return (

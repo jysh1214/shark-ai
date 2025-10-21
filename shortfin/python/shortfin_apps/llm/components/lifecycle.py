@@ -19,8 +19,10 @@ from .decode_config import DecodeConfig
 from .manager import LlmSystemManager
 from .service import LlmGenerateService
 from .tokenizer import Tokenizer
-from typing import TYPE_CHECKING
+from .qemu_executor import QemuVmfbExecutor
+from typing import TYPE_CHECKING, Optional
 from fastapi import FastAPI
+from pathlib import Path
 
 
 from contextlib import asynccontextmanager
@@ -73,6 +75,52 @@ class ShortfinLlmLifecycleManager:
             amdgpu_allow_device_reuse=server_params.amdgpu_allow_device_reuse,
         )
 
+        # Setup QEMU executor if configured
+        qemu_executor = None
+        if hasattr(args, "qemu_executable") and args.qemu_executable is not None:
+            if args.iree_run_module_path is None:
+                raise ValueError(
+                    "--iree_run_module_path is required when using --qemu_executable"
+                )
+
+            # Parse QEMU arguments from file
+            qemu_args = []
+            if hasattr(args, "qemu_args") and args.qemu_args is not None:
+                qemu_args_path = Path(args.qemu_args)
+                if not qemu_args_path.exists():
+                    raise FileNotFoundError(f"QEMU args file not found: {qemu_args_path}")
+
+                # Read args from file, one per line, skip comments and empty lines
+                with open(qemu_args_path, "r") as f:
+                    # Parse each line, skipping comments (#) and empty lines
+                    # Example file content:
+                    #   -L
+                    #   /usr/riscv64-linux-gnu
+                    #   # This is a comment
+                    #   -cpu
+                    #   rv64
+                    qemu_args = [
+                        line.strip()
+                        for line in f
+                        if line.strip() and not line.strip().startswith('#')
+                    ]
+                logging.info(f"Loaded {len(qemu_args)} QEMU arguments from {qemu_args_path}")
+
+            # Get parameters path (first one if multiple provided)
+            parameters_path = None
+            if args.parameters and len(args.parameters) > 0:
+                parameters_path = str(args.parameters[0])
+
+            qemu_executor = QemuVmfbExecutor(
+                qemu_executable=str(args.qemu_executable),
+                qemu_args=qemu_args,
+                iree_run_module_path=str(args.iree_run_module_path),
+                vmfb_path=str(args.vmfb),
+                parameters_path=parameters_path,
+                device=args.device,
+            )
+            logging.info("QEMU executor configured for cross-architecture VMFB execution")
+
         # Setup each service we are hosting.
         eos_token = get_eos_from_tokenizer_config(args.tokenizer_config_json)
         tokenizer = Tokenizer.from_tokenizer_json_file(
@@ -85,9 +133,16 @@ class ShortfinLlmLifecycleManager:
             model_params=model_params,
             server_params=server_params,
             program_isolation=server_params.program_isolation,
+            qemu_executor=qemu_executor,
         )
-        service.load_inference_module(args.vmfb)
-        service.load_inference_parameters(*args.parameters, parameter_scope="model")
+
+        # Only load modules if not using QEMU executor
+        if qemu_executor is None:
+            service.load_inference_module(args.vmfb)
+            service.load_inference_parameters(*args.parameters, parameter_scope="model")
+        else:
+            logging.info("Skipping in-process VMFB loading (using QEMU executor)")
+
         self.sysman = sysman
         self.services = {"default": service}
 

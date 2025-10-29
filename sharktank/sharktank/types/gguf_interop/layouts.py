@@ -25,6 +25,7 @@ __all__ = [
     "Q4_1",
     "Q4_K",
     "Q8_0",
+    "Q_FP8_E4M3FN",
 ]
 
 
@@ -65,6 +66,63 @@ class Q8_0(QuantizedTensor[BlockScaledLayout]):
 
     def __repr__(self):
         return f"Q8_0({self.name}, {self.shape})"
+
+
+class Q_FP8_E4M3FN(QuantizedTensor[BlockScaledLayout]):
+    """
+    ```
+    #define QK_FP8_E4M3FN 32
+    typedef struct {
+        ggml_half d;                    // delta (scale), per-tensor symmetric
+        uint8_t qs[QK_FP8_E4M3FN];      // fp8 e4m3fn values stored as uint8
+    } block_q_fp8_e4m3fn;
+    ```
+
+    FP8 E4M3FN per-tensor symmetric quantization (scale-only, no offset).
+    Dequantization formula: y = qs * d
+    where qs is converted from FP8 E4M3FN format to float.
+    All blocks share the same per-tensor scale value.
+    """
+
+    def __init__(
+        self, *, raw: torch.Tensor, shape: list[int], name: str = UnnamedTensorName
+    ):
+        super().__init__(name=name, shape=shape, layout_type=BlockScaledLayout)
+        assert raw.dtype == torch.uint8
+        self.raw = raw
+
+    def unpack(self) -> BlockScaledLayout:
+        # Per-tensor symmetric quantization (scale-only, no offset)
+        # Blocks are 17 i16s (34 bytes): 1 f16 scale + 32 uint8 values
+        # [0] f16: d (scale, same for all blocks)
+        # [1:17] 32 * uint8: qs (fp8 e4m3fn values)
+        linear_blocks = self.raw.view(torch.int16).reshape(-1, 17)
+        # Reblock to the result shape excluding the final dimension, which
+        # is expanded.
+        block_shape = self.shape[0:-1] + [-1, 17]
+        blocks = linear_blocks.reshape(block_shape)
+        d = blocks[..., 0:1].view(torch.float16)
+        # FP8 E4M3FN values are stored as uint8
+        # PyTorch has torch.float8_e4m3fn dtype available from PyTorch 2.1+
+        qs_raw = blocks[..., 1:].view(torch.uint8)
+        # Convert to torch.float8_e4m3fn if available
+        # This allows PyTorch to handle the FP8 format natively
+        try:
+            qs = qs_raw.view(torch.float8_e4m3fn)
+        except AttributeError:
+            # Fallback: keep as uint8 if float8_e4m3fn not available
+            # The dequantization will need to handle the conversion
+            qs = qs_raw
+
+        # No offset (m=None) for symmetric quantization
+        return BlockScaledLayout(self.shape, d, qs, m=None)
+
+    @property
+    def subtensors(self):
+        return {self.name: self.raw}
+
+    def __repr__(self):
+        return f"Q_FP8_E4M3FN({self.name}, {self.shape})"
 
 
 class Q4_K(QuantizedTensor[SuperBlockOffsetScaled_4_6_Layout]):

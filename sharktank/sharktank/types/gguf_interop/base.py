@@ -87,6 +87,7 @@ _quantized_types = {
     "Q5_K": layouts.Q5_K,
     "Q6_K": layouts.Q6_K,
     "Q8_0": layouts.Q8_0,
+    "Q_FP8_E4M3FN": layouts.Q_FP8_E4M3FN,
 }
 
 

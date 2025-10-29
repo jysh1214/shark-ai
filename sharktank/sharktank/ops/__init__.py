@@ -35,6 +35,9 @@ from . import attention_impls
 from . import qconv_impls
 from . import qlinear_impls
 
+# FP8 native matmul (hardware accelerated)
+from . import fp8_matmul_impls
+
 from . import cpu_impls
 
 # This import should stay at the bottom for compatibility

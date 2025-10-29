@@ -82,6 +82,8 @@ def matmul_generic_tensor_block_scaled(
     This will unpack and operate generically on planar scales/blocks vs a packed
     struct. This may be fine for certain platforms but there is micro-optimization
     potential if specializing further to the packed layout.
+
+    Supports both scale-only quantization and scale+offset quantization.
     """
     lhs = unbox_tensor(lhs)
     if not transpose_rhs:
@@ -90,8 +92,19 @@ def matmul_generic_tensor_block_scaled(
     if layout is not BlockScaledLayout:
         return NotImplemented
     rhs_unpacked = rhs.unpack()
-    assert rhs_unpacked.m is None, "NYI: Q8 block scaled with offset"
-    return mmt_block_scaled_q8(lhs, rhs_unpacked.d, rhs_unpacked.qs)
+
+    # FP8 E4M3FN now uses per-tensor symmetric quantization (scale-only, no offset)
+    # Use scale-only kernel (Q8 kernel works for FP8 too since both are scale-only)
+    if rhs_unpacked.m is not None:
+        # Generic fallback: dequantize and use PyTorch matmul
+        # Convert qs to float, apply scale and offset: w = qs * d + m
+        qs_float = rhs_unpacked.qs.to(lhs.dtype)
+        w_dequant = qs_float * rhs_unpacked.d + rhs_unpacked.m
+        # Standard PyTorch matmul with transposed RHS
+        return torch.matmul(lhs, w_dequant.transpose(-2, -1))
+    else:
+        # Scale-only quantization (Q8, FP8 E4M3FN, etc.)
+        return mmt_block_scaled_q8(lhs, rhs_unpacked.d, rhs_unpacked.qs)
 
 
 @matmul.override(Tensor, QuantizedTensor, impl_name="sharktank")
